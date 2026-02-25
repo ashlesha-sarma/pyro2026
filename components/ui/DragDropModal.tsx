@@ -1,9 +1,10 @@
 'use client'
 import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useDropzone } from 'react-dropzone'
-import { X, Upload, File, Image as ImageIcon, CheckCircle, AlertCircle } from 'lucide-react'
-import { analyzeFoodLabel } from '@/lib/actions'
+import { X, Upload, CheckCircle, AlertCircle, Image as ImageIcon, FileText } from 'lucide-react'
+import DragDropZone from './DragDropZone'
+import FileList from './FileList'
+import { analyzeFoodLabel, analyzeMedicalInsuranceDocs } from '@/lib/actions'
 
 interface DragDropModalProps {
   isOpen: boolean
@@ -17,23 +18,75 @@ interface AnalysisResult {
   success: boolean
 }
 
+type TabType = 'food' | 'insurance'
+
+interface TabConfig {
+  id: TabType
+  name: string
+  icon: React.ReactNode
+  description: string
+  descBg: string
+  descBorder: string
+  descText: string
+  supportedFormats: string
+  acceptConfig: {
+    'image/*'?: string[]
+    'application/pdf'?: string[]
+    'application/msword'?: string[]
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'?: string[]
+  }
+}
+
+const TAB_CONFIG: Record<TabType, TabConfig> = {
+  food: {
+    id: 'food',
+    name: 'Food Labels',
+    icon: <ImageIcon className="w-4 h-4" />,
+    description:
+      'Upload food label images or PDFs. Our AI will extract nutritional information, ingredients, allergens, and provide health insights.',
+    descBg: 'bg-amber-50',
+    descBorder: 'border-amber-200',
+    descText: 'text-amber-900',
+    supportedFormats: 'Images (JPG, PNG, GIF, WebP) and PDFs',
+    acceptConfig: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
+      'application/pdf': ['.pdf'],
+    },
+  },
+  insurance: {
+    id: 'insurance',
+    name: 'Medical Insurance',
+    icon: <FileText className="w-4 h-4" />,
+    description:
+      "Upload your medical insurance documents (insurance cards, policy documents, benefits summaries). We'll help you understand your coverage details and benefits.",
+    descBg: 'bg-blue-50',
+    descBorder: 'border-blue-200',
+    descText: 'text-blue-900',
+    supportedFormats: 'Images (JPG, PNG, GIF, WebP), PDFs, DOC, DOCX',
+    acceptConfig: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        ['.docx'],
+    },
+  },
+}
+
 export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
+  const [activeTab, setActiveTab] = useState<TabType>('food')
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([])
   const [showResults, setShowResults] = useState(false)
+  const [isDragActive, setIsDragActive] = useState(false)
+
+  const activeTabConfig = TAB_CONFIG[activeTab]
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setUploadedFiles((prev) => [...prev, ...acceptedFiles])
+    setIsDragActive(false)
   }, [])
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
-      'application/pdf': ['.pdf'],
-    },
-  })
 
   const removeFile = (index: number) => {
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
@@ -49,7 +102,13 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
         formData.append('files', file)
       })
 
-      const response = await analyzeFoodLabel(formData)
+      let response
+
+      if (activeTab === 'food') {
+        response = await analyzeFoodLabel(formData)
+      } else {
+        response = await analyzeMedicalInsuranceDocs(formData)
+      }
 
       if (response.success && response.data) {
         setAnalysisResults(response.data)
@@ -85,14 +144,9 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
     setShowResults(false)
   }
 
-  const getFileIcon = (file: File | string) => {
-    if (typeof file === 'string') {
-      return <File className="w-4 h-4" />
-    }
-    if (file.type.startsWith('image/')) {
-      return <ImageIcon className="w-4 h-4" />
-    }
-    return <File className="w-4 h-4" />
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab)
+    handleReset()
   }
 
   return (
@@ -118,8 +172,10 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
           >
             <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Analyze Your Food Label</h2>
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Document Analysis
+                </h2>
                 <button
                   onClick={onClose}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -127,6 +183,36 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
                   <X className="w-5 h-5 text-gray-600" />
                 </button>
               </div>
+
+              {/* Tabs */}
+              {!showResults && (
+                <div className="border-b border-gray-200 px-6 pt-4">
+                  <div className="flex gap-8">
+                    {Object.values(TAB_CONFIG).map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => handleTabChange(tab.id)}
+                        className={`pb-4 font-semibold transition-all relative ${
+                          activeTab === tab.id
+                            ? 'text-lime-600'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {tab.icon}
+                          {tab.name}
+                        </div>
+                        {activeTab === tab.id && (
+                          <motion.div
+                            layoutId="underline"
+                            className="absolute bottom-0 left-0 right-0 h-1 bg-lime-400"
+                          />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Content */}
               <div className="p-6 space-y-6">
@@ -178,100 +264,44 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
                 ) : (
                   // Upload View
                   <>
-                    {/* Drag Drop Zone */}
+                    {/* Description */}
                     <div
-                      {...getRootProps()}
-                      className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
-                        isDragActive
-                          ? 'border-lime-400 bg-lime-50'
-                          : 'border-gray-300 hover:border-gray-400 bg-gray-50'
-                      }`}
+                      className={`${activeTabConfig.descBg} border ${activeTabConfig.descBorder} rounded-lg p-4`}
                     >
-                      <input {...getInputProps()} />
-                      <motion.div
-                        animate={isDragActive ? { scale: 1.1 } : { scale: 1 }}
-                        className="flex flex-col items-center gap-3"
-                      >
-                        <Upload
-                          className={`w-12 h-12 ${
-                            isDragActive ? 'text-lime-400' : 'text-gray-400'
-                          }`}
-                        />
-                        <div>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {isDragActive
-                              ? 'Drop your files here'
-                              : 'Drag & drop your files here'}
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            or click to select files
-                          </p>
-                        </div>
-                        <div className="text-xs text-gray-500 mt-2 space-y-1">
-                          <p>
-                            Supported: Images (JPG, PNG, GIF, WebP) and PDFs
-                          </p>
-                          <p>Max file size: 10MB each</p>
-                        </div>
-                      </motion.div>
+                      <p className={`text-sm ${activeTabConfig.descText}`}>
+                        {activeTabConfig.description}
+                      </p>
+                    </div>
+
+                    {/* Drag Drop Zone */}
+                    <DragDropZone
+                      onDrop={onDrop}
+                      isDragActive={isDragActive}
+                      acceptConfig={activeTabConfig.acceptConfig}
+                    />
+
+                    {/* Supported Formats */}
+                    <div className="text-center text-xs text-gray-500 space-y-1">
+                      <p>Supported: {activeTabConfig.supportedFormats}</p>
+                      <p>Max file size: 10MB each</p>
                     </div>
 
                     {/* File List */}
-                    {uploadedFiles.length > 0 && (
-                      <div className="space-y-3">
-                        <h3 className="font-semibold text-gray-900">
-                          Uploaded Files ({uploadedFiles.length})
-                        </h3>
-                        <div className="space-y-2">
-                          {uploadedFiles.map((file, index) => (
-                            <motion.div
-                              key={`${file.name}-${index}`}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -20 }}
-                              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="flex-shrink-0 text-gray-400">
-                                  {getFileIcon(file)}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate">
-                                    {file.name}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {(file.size / 1024).toFixed(2)} KB
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => removeFile(index)}
-                                disabled={isLoading}
-                                className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </motion.div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Info Text */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <p className="text-sm text-blue-900">
-                        Our AI will analyze the nutritional information,
-                        ingredients, and allergens from your food labels.
-                      </p>
-                    </div>
+                    <FileList
+                      files={uploadedFiles}
+                      onRemoveFile={removeFile}
+                      isLoading={isLoading}
+                    />
                   </>
                 )}
               </div>
 
               {/* Footer */}
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3 z-10">
                 <button
-                  onClick={showResults ? () => { handleReset(); onClose(); } : onClose}
+                  onClick={
+                    showResults ? () => { handleReset(); onClose(); } : onClose
+                  }
                   className="px-6 py-2 text-gray-700 font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
                   disabled={isLoading}
                 >

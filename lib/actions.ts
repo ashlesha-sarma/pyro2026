@@ -101,3 +101,87 @@ Please be concise and practical in your analysis.`
     }
   }
 }
+
+export async function analyzeMedicalInsuranceDocs(formData: FormData) {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY
+
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY environment variable is not set')
+    }
+
+    const client = new GoogleGenerativeAI(apiKey)
+    const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+    const files = formData.getAll('files') as File[]
+
+    if (!files || files.length === 0) {
+      throw new Error('No files provided')
+    }
+
+    const analysisResults = []
+
+    for (const file of files) {
+      try {
+        // Convert File to Buffer
+        const arrayBuffer = await file.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+
+        // Get the MIME type
+        const mimeType = file.type || 'application/octet-stream'
+
+        // Convert to generative part format
+        const generativePart = await fileToGenerativePart(buffer, mimeType)
+
+        // Create the prompt for medical insurance document analysis
+        const prompt = `You are a medical insurance document analyst. Please analyze this insurance document image and provide:
+
+1. **Document Type**: Identify the type of document (insurance card, policy document, benefits summary, etc.)
+2. **Policy Holder Information**: Extract name, member ID, and policy number (redact sensitive info for privacy)
+3. **Coverage Details**: Main coverage types and benefits offered
+4. **Deductibles & Out-of-Pocket Limits**: If visible, extract these financial terms
+5. **Network Information**: In-network or out-of-network status
+6. **Key Benefits**: List major covered services
+7. **Contact Information**: Customer service phone number or website if available
+8. **Important Notes**: Any special conditions or requirements
+
+Please be thorough but protect sensitive personal information. Provide practical insights about the coverage.`
+
+        // Call Gemini API with the document image
+        const result = await model.generateContent([
+          prompt,
+          generativePart,
+        ])
+
+        const responseText =
+          result.response.text() || 'No analysis available'
+
+        analysisResults.push({
+          fileName: file.name,
+          analysis: responseText,
+          success: true,
+        })
+      } catch (fileError) {
+        const error = fileError as Error
+        analysisResults.push({
+          fileName: file.name,
+          error: error.message,
+          success: false,
+        })
+      }
+    }
+
+    return {
+      success: true,
+      data: analysisResults,
+      message: `Analyzed ${files.length} document(s)`,
+    }
+  } catch (err) {
+    const error = err as Error
+    return {
+      success: false,
+      error: error.message,
+      data: null,
+    }
+  }
+}
