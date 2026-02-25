@@ -209,43 +209,37 @@ Document: [attached image]`
 // Insurance Prompts
 // ─────────────────────────────────────────────────────────────────────────────
 
-const INSURANCE_PROMPT_FORMDATA = `You are an expert Health Insurance Claims Auditor. Your goal is to help users understand if their medical bills/reports will be covered by their insurance policy and to flag potential rejections before they happen.
+const INSURANCE_PROMPT_FORMDATA = `Act as a senior Medical Claims Officer specialized in Indian Government Health Schemes (PM-JAY, AB-PMJAY, and State Schemes like Atal Amrit Abhiyan). Your goal is to analyze the complete set of medical insurance documents provided to determine if a treatment is covered and cashless.
 
-Data Inputs
+You have been provided with multiple documents (insurance cards, medical reports, hospital bills, etc.). Analyze them collectively as a complete medical insurance case, rather than separately.
 
-[POLICY_DATA]: Extracted text from the user's Insurance Policy PDF.
+INSTRUCTIONS:
+1. First, extract the patient's identity and card status from any Health Card image(s). Identify the primary scheme (e.g., Ayushman Bharat or State-specific), the unique ID (PM-JAY ID/ABHA ID), and the home state.
 
-[MEDICAL_DATA]: Extracted text from Lab Reports, Doctor's Prescriptions, or Hospital Estimates.
+2. Second, parse the Medical Report(s) to identify the specific diagnosis and the advised treatment or surgery. Map these findings to the official Health Benefit Packages (HBP) for 2026. Determine if the disease falls under secondary or tertiary care specialties such as Oncology, Cardiology, Nephrology, or General Surgery, which are typically covered under these schemes.
 
-Task Steps
+3. Third, evaluate the Hospital Bill(s) or Estimate(s). Specifically check if the patient is marked as an "In-Patient" (IPD), as these cards generally do not cover Out-Patient (OPD) consultations or external lab tests unless they lead to an admission.
 
-Validation: Check if the hospital is "Cashless" or "Reimbursement" (if hospital name is provided).
+4. Cross-reference all documents together to provide a comprehensive analysis. If documents appear to be from the same case, analyze them as a cohesive whole.
 
-Room Rent Audit: Compare the Hospital Estimate's room charge against the Policy Limit (usually 1% of Sum Insured).
+YOUR FINAL RESPONSE MUST INCLUDE:
 
-Medical Necessity: Verify if the Lab Test or Surgery is "Medically Necessary" based on the Doctor's Note.
+Coverage Verdict: A clear "YES," "NO," or "PARTIAL" statement regarding bill coverage.
 
-Waiting Period Check: Identify if the diagnosis falls under the "2-year waiting period" based on the Policy Start Date.
+Reasoning: A detailed explanation of the decision based on all provided documents (e.g., matching the diagnosis to a specific government package, identifying hospital empanelment status, or noting mismatches).
 
-Deduction Alert: Flag "Non-medical consumables" (Gloves, Masks, Gowns) that the user will have to pay out-of-pocket.
+Document Summary: Brief overview of what each document shows and how they relate to each other in the context of this insurance claim.
 
-Output Format (Telegram Style)
+Actionable Steps: Specific instructions based on the verdict (finding nearest empanelled hospital, locating "Arogya Mitra" help desk, required documents, etc.).
 
-Status: [Covered / Partial / Rejected]
+Hinglish Summary: A 2-3 line empathetic summary in Hinglish that simplifies the technical verdict for the user.
 
-Brief Summary: (One sentence explanation).
-
-The "Checklist": 3 bullet points of what to do next.
-
-Hinglish Voice Script: A 2-sentence empathetic summary in Hinglish.
-
-Guardrails
-
-DO NOT provide medical advice.
-
-ALWAYS include: "This is an AI estimate. Please verify with your TPA for the final decision."
-
-If data is missing, politely ask for the "Policy Schedule."`
+CONSTRAINTS:
+- Do not provide medical advice.
+- If documents include non-medical consumables (gloves, masks, etc.), clearly state that these might be out-of-pocket expenses even if the primary treatment is covered.
+- If any Card or Report is unclear, specify exactly which piece of information is missing to make a final determination.
+- Analyze all documents as parts of one cohesive case, not as separate claims.
+- Provide a human readable, simple, brief and short response. Do not use markdown symbols like ** or *, only plain text.`
 
 const INSURANCE_PROMPT_BUFFER = `You are an expert Health Insurance Claims Auditor. You have been given TWO documents:
 - Document 1: The user's Insurance Policy
@@ -280,25 +274,29 @@ export async function analyzeMedicalInsuranceDocs(formData: FormData) {
     const files = formData.getAll('files') as File[]
     if (!files || files.length === 0) throw new Error('No files provided')
 
-    const analysisResults = []
+    // Convert all files to generative parts
+    const generativeParts = await Promise.all(
+      files.map(async (file) => {
+        const arrayBuffer = await file.arrayBuffer()
+        const buffer      = Buffer.from(arrayBuffer)
+        const mimeType    = file.type || 'application/octet-stream'
+        return bufferToGenerativePart(buffer, mimeType)
+      }),
+    )
 
-    for (const file of files) {
-      try {
-        const arrayBuffer    = await file.arrayBuffer()
-        const buffer         = Buffer.from(arrayBuffer)
-        const mimeType       = file.type || 'application/octet-stream'
-        const generativePart = bufferToGenerativePart(buffer, mimeType)
+    // Send all documents together so Gemini analyses them as one cohesive case
+    const result = await model.generateContent([INSURANCE_PROMPT_FORMDATA, ...generativeParts])
+    const responseText = result.response.text() || 'No analysis available'
 
-        const result = await model.generateContent([INSURANCE_PROMPT_FORMDATA, generativePart])
-        const responseText = result.response.text() || 'No analysis available'
-        analysisResults.push({ fileName: file.name, analysis: responseText, success: true })
-      } catch (fileError) {
-        const error = fileError as Error
-        analysisResults.push({ fileName: file.name, error: error.message, success: false })
-      }
+    return {
+      success: true,
+      data: [{
+        fileName: `Insurance Claim Analysis (${files.length} document${files.length > 1 ? 's' : ''})`,
+        analysis: responseText,
+        success: true,
+      }],
+      message: `Analyzed ${files.length} document(s) collectively`,
     }
-
-    return { success: true, data: analysisResults, message: `Analyzed ${files.length} document(s)` }
   } catch (err) {
     const error = err as Error
     return { success: false, error: error.message, data: null }
