@@ -6,6 +6,7 @@ import DragDropZone from './DragDropZone'
 import FileList from './FileList'
 import { analyzeMedicalDocument, analyzeMedicalInsuranceDocs } from '@/lib/actions'
 import { SUPPORTED_LANGUAGES } from '@/lib/elevenlabs'
+import { fetchTtsMp3 } from '@/utils/tts'
 
 interface DragDropModalProps {
   isOpen: boolean
@@ -158,19 +159,9 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
     setIsGeneratingAudio(true)
     setTtsError(null)
     try {
-      const ttsRes = await fetch('/api/elevenlabs/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, language }),
-      })
-      if (ttsRes.ok) {
-        const arrayBuffer = await ttsRes.arrayBuffer()
-        const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' })
-        setAudioUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
-      } else {
-        const errJson = await ttsRes.json().catch(() => ({}))
-        setTtsError(errJson.error ?? 'Audio generation failed')
-      }
+      // Routes automatically: Assamese → ElevenLabs, all others → Edge TTS
+      const blob = await fetchTtsMp3({ text, language })
+      setAudioUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
     } catch (ttsErr) {
       setTtsError(ttsErr instanceof Error ? ttsErr.message : 'Audio generation failed')
     } finally {

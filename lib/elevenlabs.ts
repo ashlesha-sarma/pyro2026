@@ -56,6 +56,7 @@ export async function generateAudio(
           similarity_boost: 0.90,
           style: 0.0,
           use_speaker_boost: true,
+          speed: 1.2,
         },
       }),
     }

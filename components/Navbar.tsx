@@ -55,9 +55,9 @@ export default function Navbar() {
           <a href="/" className="flex items-center gap-2 shrink-0">
             <span className="text-xl sm:text-2xl font-black tracking-tighter">
               <span className={scrolled ? "text-white" : "text-[#121212]"}>
-                Jaane
+                Med
               </span>
-              <span className="text-[#AFFF00]">Khaana</span>
+              <span className="text-teal-500">Clarity</span>
             </span>
           </a>
 
