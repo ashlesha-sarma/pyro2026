@@ -1,7 +1,6 @@
 'use client'
 import { motion, useScroll, useTransform, useSpring } from "framer-motion"
 import { useRef, useState } from "react"
-import DragDropModal from "./ui/DragDropModal"
 
 const springConfig = { stiffness: 100, damping: 30, restDelta: 0.001 }
 
@@ -32,9 +31,7 @@ export default function Hero() {
   const closeTryNow = () => setIsModalOpen(false)
 
   return (
-    <>
-      <DragDropModal isOpen={isModalOpen} onClose={closeTryNow} />
-      <section
+    <section
       id="hero"
       ref={ref}
       className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-white"
@@ -219,8 +216,6 @@ export default function Hero() {
 
       </div>
 
-      </section>
-
-    </>
+    </section>
   )
 }
